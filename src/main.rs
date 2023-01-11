@@ -40,7 +40,7 @@ impl fmt::Display for Piece {
             Color::Black => {}
         };
 
-        write!(f, "{}", piece)
+        write!(f, "{piece}")
     }
 }
 
@@ -80,6 +80,35 @@ impl Board {
     fn starting_position() -> Self {
         let starting_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR".to_string();
         Self::load_fen(starting_fen)
+    }
+
+    fn move_piece(&mut self, from: usize, to: usize) {
+        let temp = self.pieces[from];
+        if let Some(piece) = temp {
+            match piece.piece {
+                PieceEnum::King => self.move_king(from, to),
+                PieceEnum::Queen => self.move_queen(from, to),
+                PieceEnum::Rook => self.move_rook(from, to),
+                PieceEnum::Bishop => self.move_bishop(from, to),
+                PieceEnum::Knight => self.move_knight(from, to),
+                PieceEnum::Pawn => self.move_pawn(from, to),
+            }
+        }
+    }
+
+    fn move_king(&mut self, _from: usize, _to: usize) {}
+
+    fn move_queen(&mut self, _from: usize, _to: usize) {}
+
+    fn move_rook(&mut self, _from: usize, _to: usize) {}
+
+    fn move_bishop(&mut self, _from: usize, _to: usize) {}
+
+    fn move_knight(&mut self, _from: usize, _to: usize) {}
+
+    fn move_pawn(&mut self, from: usize, to: usize) {
+        self.pieces[to] = self.pieces[from];
+        self.pieces[from] = None;
     }
 
     fn load_fen(fen: String) -> Self {
@@ -152,93 +181,59 @@ impl Board {
     }
 }
 
-struct Error {}
-
-// Horizontal
-#[derive(Debug, PartialEq)]
-enum Rank {
-    Rank(usize),
+pub enum Error {
+    SamePosition,
+    InvalidEntry,
 }
 
-impl Rank {
-    fn new(x: usize) -> Self {
-        assert!((1..=8).contains(&x));
-        Self::Rank(x)
-    }
-
-    fn from(c: char) -> Result<Self, Error> {
-        match c {
-            '1'..='8' => Ok(Self::new(c as usize - '0' as usize)),
-            _ => Err(Error {}),
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Error::SamePosition => write!(f, "The positions entered cannot be the same."),
+            Error::InvalidEntry => write!(f, "The positions entered are invalid."),
         }
     }
 }
 
-#[derive(Debug)]
-struct Coordinate {
-    file: File,
-    rank: Rank,
-}
-
-impl Coordinate {
-    fn new(file: File, rank: Rank) -> Self {
-        Self { file, rank }
-    }
-}
-
-// Vertical
-#[derive(Debug, PartialEq)]
-enum File {
-    A,
-    B,
-    C,
-    D,
-    E,
-    F,
-    G,
-    H,
-}
-
-impl File {
-    fn from(c: char) -> Result<File, Error> {
-        match c.to_ascii_uppercase() {
-            'A' => Ok(File::A),
-            'B' => Ok(File::B),
-            'C' => Ok(File::C),
-            'D' => Ok(File::D),
-            'E' => Ok(File::E),
-            'F' => Ok(File::F),
-            'G' => Ok(File::G),
-            'H' => Ok(File::H),
-            _ => Err(Error {}),
-        }
-    }
-}
-
-fn parse_move(mov: &str) -> Result<(Coordinate, Coordinate), Error> {
-    let mut chars = mov.chars();
+pub fn parse_move(mov: &str) -> Result<(usize, usize), Error> {
+    let upper = mov.to_ascii_uppercase();
+    let mut chars = upper.chars();
     if let (Some(f1), Some(r1), Some(f2), Some(r2)) =
         (chars.next(), chars.next(), chars.next(), chars.next())
     {
-        let f1 = File::from(f1)?;
-        let r1 = Rank::from(r1)?;
-        let f2 = File::from(f2)?;
-        let r2 = Rank::from(r2)?;
+        // Bounds checking to ensure input is A..H, 1..8
+        if f1.is_ascii_alphabetic()
+            && r1.is_ascii_digit()
+            && f2.is_ascii_alphabetic()
+            && r2.is_ascii_digit()
+            && (1..=8).contains(&(f1 as usize - '@' as usize))
+            && (1..=8).contains(&(f2 as usize - '@' as usize))
+            && (1..=8).contains(&(r1 as usize - '0' as usize))
+            && (1..=8).contains(&(r2 as usize - '0' as usize))
+        {
+            let row1 = f1 as usize - 'A' as usize;
+            let col1 = 7 - (r1 as usize - '1' as usize);
+            let row2 = f2 as usize - 'A' as usize;
+            let col2 = 7 - (r2 as usize - '1' as usize);
 
-        // Cannot move from same pos to same pos
-        if f1 == f2 && r1 == r2 {
-            return Err(Error {});
+            let idx1 = col1 * 8 + row1;
+            let idx2 = col2 * 8 + row2;
+
+            // Cannot move from same pos to same pos
+            if f1 == f2 && r1 == r2 {
+                return Err(Error::SamePosition);
+            }
+
+            return Ok((idx1, idx2));
         }
-
-        return Ok((Coordinate::new(f1, r1), Coordinate::new(f2, r2)));
     }
 
-    Err(Error {})
+    Err(Error::InvalidEntry)
 }
 
 fn main() {
-    let board = Board::starting_position();
-    println!("{}", board);
+    let mut board = Board::starting_position();
+    println!("{board}");
 
     loop {
         print!("> ");
@@ -257,9 +252,13 @@ fn main() {
 
         let (from, to) = match parse_move(mov) {
             Ok(coords) => coords,
-            Err(e) => continue,
+            Err(e) => {
+                println!("Error: {e}");
+                continue;
+            }
         };
 
-        println!("from {:?}, to {:?}", from, to);
+        board.move_piece(from, to);
+        println!("{board}");
     }
 }
